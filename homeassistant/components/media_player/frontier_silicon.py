@@ -15,7 +15,7 @@ from homeassistant.components.media_player import (
     SUPPORT_VOLUME_MUTE, SUPPORT_VOLUME_SET, SUPPORT_VOLUME_STEP,
     MediaPlayerDevice)
 from homeassistant.const import (
-    CONF_HOST, CONF_PASSWORD, CONF_PORT, STATE_OFF, STATE_PAUSED,
+    CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_PORT, STATE_OFF, STATE_PAUSED,
     STATE_PLAYING, STATE_UNKNOWN)
 import homeassistant.helpers.config_validation as cv
 
@@ -35,6 +35,7 @@ DEVICE_URL = 'http://{0}:{1}/device'
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Required(CONF_HOST): cv.string,
+    vol.Optional(CONF_NAME, default=None): cv.string,
     vol.Optional(CONF_PORT, default=DEFAULT_PORT): cv.port,
     vol.Optional(CONF_PASSWORD, default=DEFAULT_PASSWORD): cv.string,
 })
@@ -52,12 +53,14 @@ async def async_setup_platform(
         return True
 
     host = config.get(CONF_HOST)
+    name = config.get(CONF_NAME)
     port = config.get(CONF_PORT)
     password = config.get(CONF_PASSWORD)
 
     try:
         async_add_entities(
-            [AFSAPIDevice(DEVICE_URL.format(host, port), password)], True)
+            [AFSAPIDevice(DEVICE_URL.format(host, port), password, name)],
+            True)
         _LOGGER.debug("FSAPI device %s:%s -> %s", host, port, password)
         return True
     except requests.exceptions.RequestException:
@@ -70,13 +73,13 @@ async def async_setup_platform(
 class AFSAPIDevice(MediaPlayerDevice):
     """Representation of a Frontier Silicon device on the network."""
 
-    def __init__(self, device_url, password):
+    def __init__(self, device_url, password, name=None):
         """Initialize the Frontier Silicon API device."""
         self._device_url = device_url
         self._password = password
         self._state = None
 
-        self._name = None
+        self._name = name
         self._title = None
         self._artist = None
         self._album_name = None
