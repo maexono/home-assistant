@@ -20,9 +20,12 @@ import homeassistant.helpers.config_validation as cv
 
 _LOGGER = logging.getLogger(__name__)
 
+CONF_ATTRIB = 'additional_attributes'
+
 DEFAULT_NAME = 'Pioneer AVR'
 DEFAULT_PORT = 23   # telnet default. Some Pioneer AVRs use 8102
 DEFAULT_TIMEOUT = None
+DEFAULT_ATTRIB = {}
 
 ATTR_CMD = 'command'
 SERVICE_SEND_COMMAND = 'pioneer_send_command'
@@ -42,6 +45,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
     vol.Optional(CONF_PORT, default=DEFAULT_PORT): cv.port,
     vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): cv.socket_timeout,
+    vol.Optional(CONF_ATTRIB, default=DEFAULT_ATTRIB): dict,
 })
 
 DATA_PIONEER = 'pioneer'
@@ -54,7 +58,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 
     pioneer = PioneerDevice(
         config.get(CONF_NAME), config.get(CONF_HOST), config.get(CONF_PORT),
-        config.get(CONF_TIMEOUT))
+        config.get(CONF_TIMEOUT), config.get(CONF_ATTRIB))
 
     if pioneer.update():
         hass.data[DATA_PIONEER][pioneer._host] = pioneer
@@ -86,6 +90,8 @@ class PioneerDevice(MediaPlayerDevice):
         self._host = host
         self._port = port
         self._timeout = timeout
+        self._watched_attributes = additional_attributes
+        self._attribute_states = {}
         self._pwstate = 'PWR1'
         self._volume = 0
         self._muted = False
@@ -169,8 +175,17 @@ class PioneerDevice(MediaPlayerDevice):
         else:
             self._selected_source = None
 
+        for (key, query) in self._watched_attributes.items():
+            self._attribute_states[key] = \
+                self.telnet_request(telnet, query.upper(), key.upper())
+
         telnet.close()
         return True
+
+    @property
+    def device_state_attributes(self):
+        """Return device specific state attributes."""
+        return self._attribute_states
 
     @property
     def name(self):
