@@ -98,6 +98,21 @@ class PioneerDevice(MediaPlayerDevice):
         self._selected_source = ''
         self._source_name_to_number = {}
         self._source_number_to_name = {}
+        self._connection = None
+
+    def telnet_get(self):
+        if self._connection and not self._connection.eof:
+            try:
+                self._connection.write(b'')
+                return self._connection
+            except (OSError, AttributeError):
+                self._connection = None
+        try:
+            self._connection = telnetlib.Telnet(
+                self._host, self._port, self._timeout)
+            return self._connection
+        except (ConnectionRefusedError, OSError):
+            _LOGGER.warning("Pioneer %s refused connection", self._name)
 
     @classmethod
     def telnet_request(cls, telnet, command, expected_prefix):
@@ -121,25 +136,21 @@ class PioneerDevice(MediaPlayerDevice):
     def telnet_command(self, command):
         """Establish a telnet connection and sends command."""
         try:
-            try:
-                telnet = telnetlib.Telnet(
-                    self._host, self._port, self._timeout)
-            except (ConnectionRefusedError, OSError):
-                _LOGGER.warning("Pioneer %s refused connection", self._name)
+            telnet = self.telnet_get()
+            if not telnet:
                 return
             telnet.write(command.encode("ASCII") + b"\r")
             telnet.read_very_eager()  # skip response
-            telnet.close()
         except telnetlib.socket.timeout:
             _LOGGER.debug(
                 "Pioneer %s command %s timed out", self._name, command)
+        # Update soon to catch effects of the command.
+        self.schedule_update_ha_state(True)
 
     def update(self):
         """Get the latest details from the device."""
-        try:
-            telnet = telnetlib.Telnet(self._host, self._port, self._timeout)
-        except (ConnectionRefusedError, OSError):
-            _LOGGER.warning("Pioneer %s refused connection", self._name)
+        telnet = self.telnet_get()
+        if not telnet:
             return False
 
         pwstate = self.telnet_request(telnet, "?P", "PWR")
@@ -179,7 +190,6 @@ class PioneerDevice(MediaPlayerDevice):
             self._attribute_states[key] = \
                 self.telnet_request(telnet, query.upper(), key.upper())
 
-        telnet.close()
         return True
 
     @property
