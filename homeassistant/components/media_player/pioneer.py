@@ -26,6 +26,7 @@ DEFAULT_NAME = 'Pioneer AVR'
 DEFAULT_PORT = 23   # telnet default. Some Pioneer AVRs use 8102
 DEFAULT_TIMEOUT = None
 DEFAULT_ATTRIB = {}
+DEFAULT_MAX_VOLUME = 185
 
 ATTR_CMD = 'command'
 SERVICE_SEND_COMMAND = 'pioneer_send_command'
@@ -37,7 +38,6 @@ SUPPORT_PIONEER = SUPPORT_PAUSE | SUPPORT_VOLUME_SET | SUPPORT_VOLUME_MUTE | \
                   SUPPORT_TURN_ON | SUPPORT_TURN_OFF | \
                   SUPPORT_SELECT_SOURCE | SUPPORT_PLAY
 
-MAX_VOLUME = 185
 MAX_SOURCE_NUMBERS = 60
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
@@ -45,6 +45,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
     vol.Optional(CONF_PORT, default=DEFAULT_PORT): cv.port,
     vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): cv.socket_timeout,
+    vol.Optional(CONF_MAX_VOLUME, default=DEFAULT_MAX_VOLUME): cv.positive_int,
     vol.Optional(CONF_ATTRIB, default=DEFAULT_ATTRIB): dict,
 })
 
@@ -58,7 +59,8 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 
     pioneer = PioneerDevice(
         config.get(CONF_NAME), config.get(CONF_HOST), config.get(CONF_PORT),
-        config.get(CONF_TIMEOUT), config.get(CONF_ATTRIB))
+        config.get(CONF_TIMEOUT), config.get(CONF_ATTRIB),
+        config.get(CONF_MAX_VOLUME))
 
     if pioneer.update():
         hass.data[DATA_PIONEER][pioneer._host] = pioneer
@@ -84,7 +86,7 @@ def setup_platform(hass, config, add_entities, discovery_info=None):
 class PioneerDevice(MediaPlayerDevice):
     """Representation of a Pioneer device."""
 
-    def __init__(self, name, host, port, timeout):
+    def __init__(self, name, host, port, timeout, max_volume):
         """Initialize the Pioneer device."""
         self._name = name
         self._host = host
@@ -92,6 +94,7 @@ class PioneerDevice(MediaPlayerDevice):
         self._timeout = timeout
         self._watched_attributes = additional_attributes
         self._attribute_states = {}
+        self._max_volume = max_volume
         self._pwstate = 'PWR1'
         self._volume = 0
         self._muted = False
@@ -158,7 +161,8 @@ class PioneerDevice(MediaPlayerDevice):
             self._pwstate = pwstate
 
         volume_str = self.telnet_request(telnet, "?V", "VOL")
-        self._volume = int(volume_str[3:]) / MAX_VOLUME if volume_str else None
+        self._volume = \
+            int(volume_str[3:]) / self.max_volume if volume_str else None
 
         muted_value = self.telnet_request(telnet, "?M", "MUT")
         self._muted = (muted_value == "MUT0") if muted_value else None
@@ -257,7 +261,8 @@ class PioneerDevice(MediaPlayerDevice):
     def set_volume_level(self, volume):
         """Set volume level, range 0..1."""
         # 60dB max
-        self.telnet_command(str(round(volume * MAX_VOLUME)).zfill(3) + "VL")
+        self.telnet_command(
+            str(round(volume * self.max_volume)).zfill(3) + "VL")
 
     def mute_volume(self, mute):
         """Mute (true) or unmute (false) media player."""
