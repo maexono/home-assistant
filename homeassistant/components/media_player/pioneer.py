@@ -10,9 +10,9 @@ import telnetlib
 import voluptuous as vol
 
 from homeassistant.components.media_player import (
-    PLATFORM_SCHEMA, SUPPORT_PAUSE, SUPPORT_PLAY, SUPPORT_SELECT_SOURCE,
-    SUPPORT_TURN_OFF, SUPPORT_TURN_ON, SUPPORT_VOLUME_MUTE, SUPPORT_VOLUME_SET,
-    MediaPlayerDevice)
+    MEDIA_PLAYER_SCHEMA, PLATFORM_SCHEMA, SUPPORT_PAUSE, SUPPORT_PLAY,
+    SUPPORT_SELECT_SOURCE, SUPPORT_TURN_OFF, SUPPORT_TURN_ON,
+    SUPPORT_VOLUME_MUTE, SUPPORT_VOLUME_SET, MediaPlayerDevice)
 from homeassistant.const import (
     CONF_HOST, CONF_NAME, CONF_PORT, CONF_TIMEOUT, STATE_OFF, STATE_ON,
     STATE_UNKNOWN)
@@ -23,6 +23,12 @@ _LOGGER = logging.getLogger(__name__)
 DEFAULT_NAME = 'Pioneer AVR'
 DEFAULT_PORT = 23   # telnet default. Some Pioneer AVRs use 8102
 DEFAULT_TIMEOUT = None
+
+ATTR_CMD = 'command'
+SERVICE_SEND_COMMAND = 'pioneer_send_command'
+SEND_COMMAND_SCHEMA = MEDIA_PLAYER_SCHEMA.extend({
+    vol.Required(ATTR_CMD): cv.string,
+})
 
 SUPPORT_PIONEER = SUPPORT_PAUSE | SUPPORT_VOLUME_SET | SUPPORT_VOLUME_MUTE | \
                   SUPPORT_TURN_ON | SUPPORT_TURN_OFF | \
@@ -38,15 +44,37 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): cv.socket_timeout,
 })
 
+DATA_PIONEER = 'pioneer'
+
 
 def setup_platform(hass, config, add_entities, discovery_info=None):
     """Set up the Pioneer platform."""
+    if DATA_PIONEER not in hass.data:
+        hass.data[DATA_PIONEER] = dict()
+
     pioneer = PioneerDevice(
         config.get(CONF_NAME), config.get(CONF_HOST), config.get(CONF_PORT),
         config.get(CONF_TIMEOUT))
 
     if pioneer.update():
+        hass.data[DATA_PIONEER][pioneer._host] = pioneer
         add_entities([pioneer])
+
+    def service_handler(call):
+        entity_ids = call.data.get('entity_id')
+        command = call.data.get(ATTR_CMD)
+        if entity_ids:
+            target_players = [player
+                              for player in hass.data[DATA_PIONEER].values()
+                              if player.entity_id in entity_ids]
+        else:
+            target_players = hass.data[DATA_PIONEER].values()
+        for player in target_players:
+            player.telnet_command(command)
+
+    if not hass.services.has_service(DOMAIN, SERVICE_SEND_COMMAND):
+        hass.services.register(DOMAIN, SERVICE_SEND_COMMAND, service_handler,
+                               schema=SEND_COMMAND_SCHEMA)
 
 
 class PioneerDevice(MediaPlayerDevice):
